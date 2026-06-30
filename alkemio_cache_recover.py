@@ -210,7 +210,8 @@ def candidate_roots():
         caches, appsup = home / "Library" / "Caches", home / "Library" / "Application Support"
         cont = home / "Library" / "Containers"
         for b in ["Google/Chrome", "Chromium", "Microsoft Edge", "BraveSoftware/Brave-Browser",
-                  "Vivaldi", "com.operasoftware.Opera", "company.thebrowser.Browser"]:
+                  "Vivaldi", "Vivaldi Snapshot", "com.operasoftware.Opera",
+                  "company.thebrowser.Browser"]:
             r += [("chromium", caches / b), ("chromium", appsup / b)]
         r += [("firefox", caches / "Firefox" / "Profiles"),
               ("firefox", appsup / "Firefox" / "Profiles"),
@@ -221,14 +222,15 @@ def candidate_roots():
         rap = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
         for b in [r"Google\Chrome\User Data", r"Microsoft\Edge\User Data",
                   r"BraveSoftware\Brave-Browser\User Data", r"Chromium\User Data",
-                  r"Vivaldi\User Data", r"Opera Software\Opera Stable"]:
+                  r"Vivaldi\User Data", r"Vivaldi Snapshot\User Data",
+                  r"Opera Software\Opera Stable"]:
             r.append(("chromium", lad / b))
         r += [("firefox", lad / r"Mozilla\Firefox\Profiles"),
               ("firefox", rap / r"Mozilla\Firefox\Profiles")]
     else:  # Linux / BSD
         cache, conf = home / ".cache", home / ".config"
         for b in ["google-chrome", "chromium", "microsoft-edge",
-                  "BraveSoftware/Brave-Browser", "vivaldi", "opera"]:
+                  "BraveSoftware/Brave-Browser", "vivaldi", "vivaldi-snapshot", "opera"]:
             r += [("chromium", cache / b), ("chromium", conf / b)]
         r += [("firefox", home / ".mozilla" / "firefox"),
               ("firefox", cache / "mozilla" / "firefox")]
@@ -241,6 +243,7 @@ def candidate_roots():
               ("chromium", fp / "com.brave.Browser" / "cache" / "BraveSoftware" / "Brave-Browser"),
               ("chromium", fp / "com.microsoft.Edge" / "cache" / "microsoft-edge"),
               ("chromium", fp / "org.chromium.Chromium" / "cache" / "chromium"),
+              ("chromium", fp / "com.vivaldi.Vivaldi" / "cache" / "vivaldi"),
               ("firefox", fp / "org.mozilla.firefox" / "cache" / "mozilla" / "firefox")]
     return r
 
