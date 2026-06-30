@@ -1,0 +1,67 @@
+# Builds the standalone GUI recovery app for Windows, macOS, and Linux.
+# PyInstaller can't cross-compile, so each OS builds on its own runner.
+# Artifacts: alkemio-recover-{windows,macos,linux} (download from the run page).
+#
+# Delivery: macOS/Windows artifacts are UNSIGNED -> Gatekeeper/SmartScreen warn.
+# Sign+notarize for a clean experience, or tell users right-click->Open /
+# "More info -> Run anyway".
+name: build
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            sep: ":"
+            artifact: alkemio-recover-linux
+          - os: macos-latest
+            sep: ":"
+            artifact: alkemio-recover-macos
+          - os: windows-latest
+            sep: ";"
+            artifact: alkemio-recover-windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify Tkinter (needed to bundle the GUI; 8.6+ required)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import tkinter, sys
+          v = float(tkinter.TkVersion)
+          print("Tk", v)
+          assert v >= 8.6, f"Tk {v} too old (8.5 aborts on recent macOS)"
+          PY
+      - run: pip install pyinstaller
+      - name: Build standalone GUI app
+        shell: bash
+        run: |
+          test -f target_hashes.txt || { echo "::error::target_hashes.txt missing (run gen_hashes.py and commit it)"; exit 1; }
+          pyinstaller --onefile --windowed --noconfirm --clean \
+            --name alkemio-recover \
+            --add-data "target_hashes.txt${{ matrix.sep }}." \
+            alkemio_cache_recover.py
+      - name: Smoke test (engine selftest inside the built app)
+        shell: bash
+        run: |
+          if [ -d dist/alkemio-recover.app ]; then
+            dist/alkemio-recover.app/Contents/MacOS/alkemio-recover --selftest
+          else
+            ./dist/alkemio-recover* --selftest
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
