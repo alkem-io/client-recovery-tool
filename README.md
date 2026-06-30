@@ -60,10 +60,20 @@ across **all browser profiles**.
    button. The user sends that `.zip` back to the recovery team.
 
 Tell users to **close all browser windows first** (a running browser locks its
-cache files). On **macOS**, Safari additionally needs **Full Disk Access**
-(System Settings → Privacy & Security → Full Disk Access → enable the app);
-Chrome/Brave/Edge/Firefox work without it, and the app shows this hint when it
-detects the block.
+cache files).
+
+**macOS Safari needs Full Disk Access.** macOS provides *no API to trigger the
+Full Disk Access prompt* (Apple disallows requesting it programmatically), so
+the app can't pop it automatically. Instead, when it detects Safari is blocked
+it shows a highlighted banner with an **"Open macOS Settings"** button that
+jumps straight to the Full Disk Access pane, plus an **"I enabled it — scan
+again"** button. The user toggles the app on there; if Safari still shows
+locked, they **quit and reopen** the app (TCC applies the grant on relaunch).
+Chrome/Brave/Edge/Firefox recover **without** Full Disk Access.
+
+> Note: code-signing + notarizing the app (see below) can additionally surface
+> macOS's "access data from other apps" prompt for the Safari container, but
+> Full Disk Access remains the reliable mechanism.
 
 ## Build (produces one standalone app; clients install NOTHING)
 

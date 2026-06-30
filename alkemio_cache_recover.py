@@ -288,6 +288,39 @@ def browser_label(path):
     return "browser"
 
 
+def safari_cache_blocked():
+    """macOS only: True if Safari's cache exists but is unreadable without Full
+    Disk Access. (Apple provides no API to *request* FDA, so we can only detect
+    the block and guide the user to the Settings pane.)"""
+    if platform.system() != "Darwin":
+        return False
+    home = Path.home()
+    probes = [
+        home / "Library" / "Containers" / "com.apple.Safari" / "Data" / "Library" / "Caches",
+        home / "Library" / "Caches" / "com.apple.Safari",
+    ]
+    for p in probes:
+        try:
+            list(os.scandir(p))            # works with FDA, EPERM without it
+        except PermissionError:
+            return True
+        except OSError:
+            pass                           # missing / other -> not a TCC block
+    return False
+
+
+def open_full_disk_access_settings():
+    """Open the exact macOS 'Full Disk Access' settings pane."""
+    try:
+        import subprocess
+        subprocess.run(
+            ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"],
+            check=False)
+        return True
+    except Exception:  # noqa
+        return False
+
+
 # -------------------------------------------------------------- target hashes
 def bundled_hashes_path():
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -454,8 +487,9 @@ def scan_cli(args):
         print("  Some data needs extra permission: "
               + ", ".join(f"{b}({c})" for b, c in denied.items()))
         if platform.system() == "Darwin":
-            print("  For Safari: System Settings -> Privacy & Security -> Full Disk "
-                  "Access -> enable this app (or Terminal), then re-run.")
+            print("  For Safari, grant Full Disk Access, then re-run. Open the pane with:")
+            print("    open 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles'")
+            print("  Enable this app there (if still locked, quit and reopen it).")
     if not found:
         print("\nNo recoverable Alkemio files were found. Nothing created or sent.")
         return 0
@@ -509,9 +543,23 @@ def run_gui(args):
                    "it saves one file that you can choose to send back.")
              ).pack(anchor="w", padx=16, pady=(2, 10))
 
+    # Safari / Full Disk Access banner (created hidden; shown only when needed).
+    perm = tk.Frame(root, bg="#FFF4CE", bd=1, relief="solid")
+    tk.Label(perm, bg="#FFF4CE", fg="#5b4a00", justify="left", wraplength=600,
+             text=("Safari is locked by macOS. To also recover Safari files, give this "
+                   "app Full Disk Access, then scan again. (Chrome, Edge, Brave and "
+                   "Firefox work without it.)")
+             ).pack(anchor="w", padx=10, pady=(8, 4))
+    perm_row = tk.Frame(perm, bg="#FFF4CE")
+    perm_row.pack(anchor="w", padx=10, pady=(0, 8))
+    perm_settings_btn = tk.Button(perm_row, text="Open macOS Settings")
+    perm_rescan_btn = tk.Button(perm_row, text="I enabled it — scan again")
+    perm_settings_btn.pack(side="left", padx=(0, 8))
+    perm_rescan_btn.pack(side="left")
+
     status = tk.StringVar(value="Ready. Close your browsers first for best results.")
     bar = ttk.Progressbar(root, mode="indeterminate")
-    results = scrolledtext.ScrolledText(root, height=16, wrap="word", state="disabled",
+    results = scrolledtext.ScrolledText(root, height=15, wrap="word", state="disabled",
                                         font=("Menlo", 11))
 
     btns = tk.Frame(root)
@@ -522,8 +570,15 @@ def run_gui(args):
     for b in (scan_btn, create_btn, open_btn, quit_btn):
         b.pack(side="left", padx=(0, 8))
 
-    tk.Label(root, textvariable=status, anchor="w", fg="#222").pack(fill="x", padx=16, pady=(8, 2))
+    status_lbl = tk.Label(root, textvariable=status, anchor="w", fg="#222")
+    status_lbl.pack(fill="x", padx=16, pady=(8, 2))
     bar.pack(fill="x", padx=16)
+
+    def show_perm_banner(show_it):
+        if show_it:
+            perm.pack(fill="x", padx=16, pady=(0, 8), before=status_lbl)
+        else:
+            perm.pack_forget()
     results.pack(fill="both", expand=True, padx=16, pady=10)
     btns.pack(anchor="w", padx=16, pady=(0, 14))
 
@@ -556,9 +611,11 @@ def run_gui(args):
         if locked:
             notes += (f"\nNote: {locked:,} cache files were locked (a browser is open). "
                       "Close all browsers and scan again to check those too.\n")
-        if denied and platform.system() == "Darwin":
-            notes += ("\nNote: Safari needs Full Disk Access. System Settings -> Privacy "
-                      "& Security -> Full Disk Access -> enable this app, then re-scan.\n")
+        safari_blocked = bool(denied) and platform.system() == "Darwin"
+        show_perm_banner(safari_blocked)
+        if safari_blocked:
+            notes += ("\nSafari is locked by macOS. Use the highlighted bar above to "
+                      "grant Full Disk Access, then click 'scan again'.\n")
         if not found:
             status.set("No recoverable Alkemio files were found.")
             show("Nothing matched. Nothing was created or sent. Thank you for checking."
@@ -614,9 +671,25 @@ def run_gui(args):
             pass
         root.after(120, poll)
 
+    def on_open_settings():
+        open_full_disk_access_settings()
+        status.set("In Settings: turn ON this app under Full Disk Access, then come "
+                   "back and click 'scan again'. (If it stays locked, quit and reopen "
+                   "this app.)")
+
     scan_btn.config(command=start_scan)
     create_btn.config(command=do_create)
     open_btn.config(command=open_folder)
+    perm_settings_btn.config(command=on_open_settings)
+    perm_rescan_btn.config(command=start_scan)
+
+    # Proactive check: if Safari is locked, show the banner before scanning so the
+    # user can grant access up front and recover everything in one pass.
+    if safari_cache_blocked():
+        show_perm_banner(True)
+        status.set("Safari is locked by macOS. Grant Full Disk Access (bar above) to "
+                   "include Safari, or just click Scan for the other browsers.")
+
     root.after(120, poll)
     root.mainloop()
     return 0
