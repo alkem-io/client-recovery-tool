@@ -49,6 +49,7 @@ MARKER = b"/rest/storage/"
 csv.field_size_limit(10 * 1024 * 1024)
 
 URL_RE = re.compile(rb"https?://[^\x00\s\"'<>\\]+")
+UUID_RE = re.compile(rb"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 _B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
@@ -159,7 +160,7 @@ def parse_chromium_entry(data):
         body, verified = _find_body_by_crc(data, ks + key_length)
         if body is None:
             continue
-        hit = (body, verified)
+        hit = (body, verified, data[ks:ks + key_length])   # (body, crc_verified, cache key)
         if verified:
             return hit
         best = best or hit
@@ -376,6 +377,7 @@ def collect_hits(args, target, progress=None):
     sha3_set, cid_set = target
     use_cid = bool(cid_set)
     hits, stats, denied, locked = {}, Counter(), Counter(), 0
+    excluded = {}   # storage objects seen but dropped on hash mismatch (by sha3)
     is_mac = platform.system() == "Darwin"
 
     def _is_tcc(path):
@@ -411,10 +413,12 @@ def collect_hits(args, target, progress=None):
                 continue
             stats["scanned"] += 1
             candidates = []
+            chromium_body = chromium_key = None
             if kind == "chromium" and len(data) >= 8 and MARKER in data and \
                     struct.unpack_from("<Q", data, 0)[0] == SIMPLE_INITIAL_MAGIC:
                 res = parse_chromium_entry(data)
                 if res:
+                    chromium_body, _crc, chromium_key = res
                     candidates.append((res[0], res[1]))
             if kind in ("safari", "firefox") or (kind == "chromium" and MARKER in data):
                 for body in carve_bodies(data):
@@ -430,10 +434,21 @@ def collect_hits(args, target, progress=None):
                 hits[matched] = {"hash": matched, "body": body, "size": len(body),
                                  "ext": guess_ext(body), "crc_verified": crc_ok,
                                  "browser": browser_label(cdir), "source": de.path}
-    return list(hits.values()), stats, denied, locked
+            # A Chromium entry keyed by a /rest/storage/ URL whose CRC-verified bytes
+            # matched no wanted hash: record it (excluded on hash check) for the audit
+            # list shipped in the bundle. It is never restored.
+            if chromium_body is not None:
+                hb = sha3_hex(chromium_body)
+                cb = cidv0(chromium_body) if use_cid else None
+                if hb not in sha3_set and (cb is None or cb not in cid_set) and hb not in excluded:
+                    m = UUID_RE.search(chromium_key or b"")
+                    excluded[hb] = {"uuid": m.group(0).decode() if m else "",
+                                    "sha3": hb, "size": len(chromium_body),
+                                    "browser": browser_label(cdir), "source": de.path}
+    return list(hits.values()), stats, denied, locked, list(excluded.values())
 
 
-def write_bundle(found, args, name_source):
+def write_bundle(found, args, name_source, excluded=None):
     """Write files + manifest + zip. Each file is named by its file-service
     STORAGE KEY — the full externalID (content hash), no extension, no truncation —
     so restoring is literally `cp files/* /storage/`: the surviving DB rows
@@ -469,6 +484,24 @@ def write_bundle(found, args, name_source):
         "(e.g. `cp files/* /storage/`): the database still references them by that "
         "key, so they are served again automatically — no re-upload needed.\n\n"
         "Please send the .zip next to this folder back to the Alkemio recovery team.\n")
+    # Audit list: storage objects seen in the cache but dropped on a hash mismatch.
+    excluded = excluded or []
+    hdr = [
+        "Storage objects found in this browser's cache but EXCLUDED because their",
+        "content did NOT match any wanted file (SHA3-256 mismatch). They are NOT",
+        "restored. Most are simply files outside the recovery scope; a mismatch on a",
+        "file you DID expect can mean a partial / corrupted / older cached copy --",
+        "worth manual review. Only browsers that expose the source URL",
+        "(Chrome/Brave/Edge/Vivaldi/Opera) can be listed here; Safari/Firefox blobs",
+        "carry no URL, so they cannot appear in this list.",
+        "",
+        f"count: {len(excluded)}",
+        "",
+        f"{'document_uuid':36}  {'computed_sha3_256':64}  {'size':>10}  browser",
+    ]
+    body = [f"{e['uuid']:36}  {e['sha3']:64}  {e['size']:>10}  {e['browser']}"
+            for e in sorted(excluded, key=lambda x: -x["size"])]
+    (out_dir / "excluded-by-hash-check.txt").write_text("\n".join(hdr + body) + "\n")
     zip_path = Path(str(out_dir) + ".zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in out_dir.rglob("*"):
@@ -483,7 +516,7 @@ def scan_cli(args):
     target = (sha3_set, cid_set)
     print(f"Looking for {len(target[0]) + len(target[1]):,} lost Alkemio files in your "
           f"browser caches ...")
-    found, stats, denied, locked = collect_hits(args, target)
+    found, stats, denied, locked, excluded = collect_hits(args, target)
     print(f"\nScanned {stats['scanned']:,} cache files across your browsers.")
     if locked:
         msg = ("Close ALL browser windows and run again to check them."
@@ -498,6 +531,9 @@ def scan_cli(args):
             print("  Enable this app there (if still locked, quit and reopen it).")
     if not found:
         print("\nNo recoverable Alkemio files were found. Nothing created or sent.")
+        if excluded:
+            print(f"  ({len(excluded)} storage object(s) were in cache but matched no "
+                  "wanted hash — nothing to save.)")
         return 0
     total = sum(h["size"] for h in found)
     print(f"\nFound {len(found)} recoverable file(s), {human_size(total)}:")
@@ -512,9 +548,12 @@ def scan_cli(args):
                 return 0
         except EOFError:
             pass
-    zip_path, named, _ = write_bundle(found, args, name_source)
+    zip_path, named, _ = write_bundle(found, args, name_source, excluded)
     print(f"\nDone. Saved {len(found)} file(s), each named by its storage key. "
           f"Send this to Alkemio:\n  {zip_path}")
+    if excluded:
+        print(f"  ({len(excluded)} other cached storage object(s) didn't match any wanted "
+              "hash — listed in excluded-by-hash-check.txt)")
     return 0
 
 
@@ -598,9 +637,9 @@ def run_gui(args):
         results.see("end")
 
     def worker():
-        found, stats, denied, locked = collect_hits(
+        found, stats, denied, locked, excluded = collect_hits(
             args, target, lambda n, b: q.put(("prog", n, b)))
-        q.put(("done", found, stats, denied, locked))
+        q.put(("done", found, stats, denied, locked, excluded))
 
     def start_scan():
         scan_btn.config(state="disabled")
@@ -611,7 +650,8 @@ def run_gui(args):
         status.set("Scanning your browser caches...")
         threading.Thread(target=worker, daemon=True).start()
 
-    def on_done(found, stats, denied, locked):
+    def on_done(found, stats, denied, locked, excluded=None):
+        st["excluded"] = excluded or []
         bar.stop()
         st["found"] = found
         notes = ""
@@ -643,7 +683,7 @@ def run_gui(args):
 
     def do_create():
         try:
-            zip_path, named, _ = write_bundle(st["found"], args, name_source)
+            zip_path, named, _ = write_bundle(st["found"], args, name_source, st.get("excluded"))
         except Exception as e:  # noqa
             status.set("Could not write the file.")
             show(f"\nError: {e}\n")

@@ -150,9 +150,18 @@ alkemio-recover --selftest            # engine self-check
 Output (both modes): `files/` — **each file named by its full file-service
 storage key** (the `externalID` = full SHA3-256, **no extension**, no truncation) —
 plus `manifest.csv` (`saved_as`, `content_hash`, `size`, `crc_verified`, `browser`,
-`db_filename`, `mime`, `source_cache_file`), `README.txt`, and the `.zip`. `--db`
-only *adds* the `db_filename` column; it does **not** change the storage-key
-filenames.
+`db_filename`, `mime`, `source_cache_file`), `excluded-by-hash-check.txt`,
+`README.txt`, and the `.zip`. `--db` only *adds* the `db_filename` column; it does
+**not** change the storage-key filenames.
+
+**`excluded-by-hash-check.txt`** is an audit list: Chromium-family cache entries
+that were clearly Alkemio storage objects (their key carried a
+`/rest/storage/document/<uuid>` URL) but whose CRC-verified bytes matched **no**
+wanted hash — so they were dropped, never restored. Most are simply files outside
+the recovery scope; but a mismatch on a file you *did* expect flags a partial /
+corrupted / older cached copy worth manual review (run against the **full**
+`externalID` set to make this signal meaningful). Safari/Firefox blobs carry no URL,
+so they can't appear here.
 
 ## Restoring (this is the whole point)
 
