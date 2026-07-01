@@ -12,16 +12,21 @@ the bytes only ever land in the browser's native HTTP cache, which a web page
 
 ## Download (latest build)
 
-CI publishes the newest build to the [**latest release**](https://github.com/alkem-io/client-recovery-tool/releases/tag/latest):
+CI publishes the newest build to the [**latest release**](https://github.com/alkem-io/client-recovery-tool/releases/tag/latest).
+Pick the variant that matches where the files were lost — **`prod`** (alkem.io) or
+**`acc`** (acceptance / acc-alkem.io). Each embeds that environment's lost-file
+hashes, so the prod app only matches prod files and the acc app only matches acc.
 
-| OS | Download | Run |
-|---|---|---|
-| **Windows** | [`alkemio-recover-windows.exe`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-windows.exe) | double-click → "More info" → **Run anyway** (unsigned) |
-| **macOS** | [`alkemio-recover-macos.zip`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-macos.zip) | unzip, then **clear quarantine** (see below) — the app is unsigned |
-| **Linux** | [`alkemio-recover-linux`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-linux) | `chmod +x alkemio-recover-linux && ./alkemio-recover-linux` |
+| OS | prod (alkem.io) | acceptance (acc-alkem.io) | Run |
+|---|---|---|---|
+| **Windows** | [`…-prod-windows.exe`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-prod-windows.exe) | [`…-acc-windows.exe`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-acc-windows.exe) | double-click → "More info" → **Run anyway** (unsigned) |
+| **macOS** | [`…-prod-macos.zip`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-prod-macos.zip) | [`…-acc-macos.zip`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-acc-macos.zip) | unzip, then **clear quarantine** (see below) |
+| **Linux** | [`…-prod-linux`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-prod-linux) | [`…-acc-linux`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-acc-linux) | `chmod +x <file> && ./<file>` |
 
 > These links point at a rolling `latest` release refreshed on every push to
 > `main`. This repo is private, so downloading requires GitHub access.
+> **Linux:** the binary is built on Ubuntu 22.04, so it needs **glibc 2.35+**
+> (Ubuntu 22.04 or newer / equivalent).
 
 ### First launch on macOS (required — the app is unsigned)
 
