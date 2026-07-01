@@ -420,9 +420,14 @@ def collect_hits(args, target, progress=None):
                 if res:
                     chromium_body, _crc, chromium_key = res
                     candidates.append((res[0], res[1]))
-            if kind in ("safari", "firefox") or (kind == "chromium" and MARKER in data):
-                for body in carve_bodies(data):
-                    candidates.append((body, False))
+            # Carve EVERY cache file, in every browser, regardless of the URL marker.
+            # Chromium's Simple Cache (macOS/Linux) keeps the body beside the URL, but
+            # the BLOCKFILE backend (Chromium on Windows — e.g. Vivaldi/Chrome/Edge)
+            # stores larger bodies in separate f_* files that contain NO URL. Carving
+            # unconditionally recovers images from those (and from any URL that doesn't
+            # match the marker). Non-matching carves are dropped by the hash gate below.
+            for body in carve_bodies(data):
+                candidates.append((body, False))
             for body, crc_ok in candidates:
                 h = sha3_hex(body)
                 matched = h if h in sha3_set else None
