@@ -247,6 +247,30 @@ def carve_bodies(data):
             out.append(data[s:e + 5])
             out.append(data[s:e + 6])
 
+    s = data.find(b"PK\x03\x04")                      # ZIP / OOXML (docx/xlsx/pptx) / ODF
+    if s >= 0:
+        e = data.rfind(b"PK\x05\x06")                 # End Of Central Directory record
+        if e > s and e + 22 <= n:
+            clen = int.from_bytes(data[e + 20:e + 22], "little")
+            if e + 22 + clen <= n:
+                out.append(data[s:e + 22 + clen])
+
+    ends, i = [], 0                                   # SVG (text): <?xml/<svg ... </svg>
+    while True:
+        e = data.find(b"</svg>", i)
+        if e < 0:
+            break
+        ends.append(e)
+        i = e + 6
+    for e in ends:
+        svg = data.rfind(b"<svg", 0, e)
+        if svg < 0:
+            continue
+        out.append(data[svg:e + 6])
+        xml = data.rfind(b"<?xml", 0, svg)            # include an <?xml prologue if adjacent
+        if xml >= 0 and svg - xml < 512:
+            out.append(data[xml:e + 6])
+
     return out
 
 
@@ -834,6 +858,13 @@ def selftest():
     multi = all(sha3_hex(x) in cs for x in (png, jpg, png2, jpg2, webp))
     print(f"  carve multi-object (blockfile packing + webp): {'PASS' if multi else 'FAIL'}")
     ok &= multi
+    # non-image docs: ZIP/OOXML (docx/xlsx/pptx) + SVG
+    zf = b"PK\x03\x04" + b"payload-bytes" + b"PK\x05\x06" + b"\x00" * 16 + b"\x00\x00"
+    svg = b"<?xml version='1.0'?><svg xmlns='x'>content</svg>"
+    cs2 = {sha3_hex(b) for b in carve_bodies(b"__" + zf + b"##" + svg + b"$$")}
+    docs = sha3_hex(zf) in cs2 and sha3_hex(svg) in cs2
+    print(f"  carve ZIP/OOXML + SVG: {'PASS' if docs else 'FAIL'}")
+    ok &= docs
     cid = cidv0(b"hello").startswith("Qm")
     print(f"  CIDv0 encode: {'PASS' if cid else 'FAIL'}")
     ok &= cid
