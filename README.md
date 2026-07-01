@@ -17,13 +17,29 @@ CI publishes the newest build to the [**latest release**](https://github.com/alk
 | OS | Download | Run |
 |---|---|---|
 | **Windows** | [`alkemio-recover-windows.exe`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-windows.exe) | double-click → "More info" → **Run anyway** (unsigned) |
-| **macOS** | [`alkemio-recover-macos.zip`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-macos.zip) | unzip → **right-click** the `.app` → **Open** (unsigned). Grant Full Disk Access for Safari (see below) |
+| **macOS** | [`alkemio-recover-macos.zip`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-macos.zip) | unzip, then **clear quarantine** (see below) — the app is unsigned |
 | **Linux** | [`alkemio-recover-linux`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-linux) | `chmod +x alkemio-recover-linux && ./alkemio-recover-linux` |
 
 > These links point at a rolling `latest` release refreshed on every push to
-> `main`. This repo is private, so downloading requires GitHub access. The
-> binaries are **unsigned** — see [Code signing](#code-signing-removes-the-os-unidentified-developer-warnings)
-> for how to remove the OS warnings, or use the right-click/Run-anyway steps above.
+> `main`. This repo is private, so downloading requires GitHub access.
+
+### First launch on macOS (required — the app is unsigned)
+
+Because the app is **not signed/notarized**, macOS quarantines every download and
+blocks it. You must clear that **once per download**. Easiest and most reliable
+(Terminal):
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/alkemio-recover.app
+open ~/Downloads/alkemio-recover.app
+```
+
+Or without Terminal: **right-click** the app → **Open**; if macOS still refuses,
+go to **System Settings → Privacy & Security**, scroll to the "…was blocked"
+notice, click **Open Anyway**, then open it again.
+
+*(This manual step is unavoidable while the app is unsigned — the only way to
+remove it entirely is to code-sign + notarize the app; see [Code signing](#code-signing-removes-the-os-unidentified-developer-warnings).)*
 
 ## How it works
 

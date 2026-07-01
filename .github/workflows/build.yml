@@ -60,10 +60,24 @@ jobs:
           else
             ./dist/alkemio-recover* --selftest
           fi
+      # Package the final release asset ON THE BUILD OS. Critically, zip the macOS
+      # .app here with `ditto` so the executable bit / symlinks / signature are
+      # preserved INSIDE the archive — `upload-artifact` strips the +x bit off
+      # loose files, which previously produced a non-executable, un-openable app.
+      - name: Package release asset
+        shell: bash
+        run: |
+          mkdir -p out
+          case "${{ runner.os }}" in
+            macOS)   ditto -c -k --keepParent dist/alkemio-recover.app out/alkemio-recover-macos.zip ;;
+            Windows) cp dist/alkemio-recover.exe out/alkemio-recover-windows.exe ;;
+            Linux)   cp dist/alkemio-recover     out/alkemio-recover-linux ;;
+          esac
+          ls -la out
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/*
+          path: out/*
           if-no-files-found: error
 
   # Publish the three binaries as assets on a rolling "latest" GitHub Release so
@@ -79,20 +93,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: Package release assets
+      - name: Collect release assets
         shell: bash
         run: |
+          # Assets are already packaged per-OS in the build jobs (macOS zipped with
+          # ditto to keep the exec bit). Just gather them — do NOT re-zip here.
           mkdir -p release
-          # Windows: ship the .exe directly (double-click to run)
-          cp "$(find artifacts/alkemio-recover-windows -type f -name '*.exe' | head -1)" \
-             release/alkemio-recover-windows.exe
-          # macOS: the app is a .app *bundle* (a directory) — zip it so it is one file
-          app="$(find artifacts/alkemio-recover-macos -maxdepth 2 -name '*.app' -type d | head -1)"
-          ( cd "$(dirname "$app")" && zip -r -q "$GITHUB_WORKSPACE/release/alkemio-recover-macos.zip" "$(basename "$app")" )
-          # Linux: the single binary
-          cp "$(find artifacts/alkemio-recover-linux -maxdepth 2 -type f -name 'alkemio-recover' | head -1)" \
-             release/alkemio-recover-linux
-          chmod +x release/alkemio-recover-linux
+          find artifacts -type f \( \
+            -name 'alkemio-recover-windows.exe' -o \
+            -name 'alkemio-recover-macos.zip'   -o \
+            -name 'alkemio-recover-linux' \) -exec cp {} release/ \;
           ls -la release
       - name: Publish/refresh rolling "latest" release
         env:
