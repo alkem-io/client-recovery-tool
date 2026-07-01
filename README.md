@@ -10,6 +10,21 @@ its own to disk (no Service Worker cache, no IndexedDB, no Apollo persistence) �
 the bytes only ever land in the browser's native HTTP cache, which a web page
 **cannot** read. So this is a small native program users run locally.
 
+## Download (latest build)
+
+CI publishes the newest build to the [**latest release**](https://github.com/alkem-io/client-recovery-tool/releases/tag/latest):
+
+| OS | Download | Run |
+|---|---|---|
+| **Windows** | [`alkemio-recover-windows.exe`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-windows.exe) | double-click → "More info" → **Run anyway** (unsigned) |
+| **macOS** | [`alkemio-recover-macos.zip`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-macos.zip) | unzip → **right-click** the `.app` → **Open** (unsigned). Grant Full Disk Access for Safari (see below) |
+| **Linux** | [`alkemio-recover-linux`](https://github.com/alkem-io/client-recovery-tool/releases/download/latest/alkemio-recover-linux) | `chmod +x alkemio-recover-linux && ./alkemio-recover-linux` |
+
+> These links point at a rolling `latest` release refreshed on every push to
+> `main`. This repo is private, so downloading requires GitHub access. The
+> binaries are **unsigned** — see [Code signing](#code-signing-removes-the-os-unidentified-developer-warnings)
+> for how to remove the OS warnings, or use the right-click/Run-anyway steps above.
+
 ## How it works
 
 * The web client loads uploaded files as plain requests to

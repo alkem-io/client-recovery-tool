@@ -65,3 +65,44 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/*
           if-no-files-found: error
+
+  # Publish the three binaries as assets on a rolling "latest" GitHub Release so
+  # they have stable, linkable download URLs for the README
+  # (releases/download/latest/<asset>). Runs only on main (not on PRs).
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Package release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          # Windows: ship the .exe directly (double-click to run)
+          cp "$(find artifacts/alkemio-recover-windows -type f -name '*.exe' | head -1)" \
+             release/alkemio-recover-windows.exe
+          # macOS: the app is a .app *bundle* (a directory) — zip it so it is one file
+          app="$(find artifacts/alkemio-recover-macos -maxdepth 2 -name '*.app' -type d | head -1)"
+          ( cd "$(dirname "$app")" && zip -r -q "$GITHUB_WORKSPACE/release/alkemio-recover-macos.zip" "$(basename "$app")" )
+          # Linux: the single binary
+          cp "$(find artifacts/alkemio-recover-linux -maxdepth 2 -type f -name 'alkemio-recover' | head -1)" \
+             release/alkemio-recover-linux
+          chmod +x release/alkemio-recover-linux
+          ls -la release
+      - name: Publish/refresh rolling "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create latest --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+                 --title "Latest build" \
+                 --notes "Automated build of the browser-cache recovery app. Unsigned: on macOS right-click → Open the first time; on Windows choose More info → Run anyway. See the README."
+          gh release upload latest --repo "$GITHUB_REPOSITORY" --clobber \
+            release/alkemio-recover-windows.exe \
+            release/alkemio-recover-macos.zip \
+            release/alkemio-recover-linux
