@@ -168,37 +168,85 @@ def parse_chromium_entry(data):
 
 
 def carve_bodies(data):
+    """Multi-object carve: find EVERY embedded image/PDF and yield each, bounded by
+    its own structural end. This matters for Chromium's BLOCKFILE backend (Windows),
+    where small entries (<~16KB) are packed CONTIGUOUSLY inside the data_# block
+    files rather than in their own f_* file — many small images share one file. Also
+    handles any file holding multiple objects. Over-carving is harmless: the SHA3
+    gate downstream discards mis-carves, keeping only exact storage-key matches."""
     out = []
-    i = 0
-    while True:  # PNG
+    n = len(data)
+
+    i = 0                                             # PNG: sig ... IEND + CRC
+    while True:
         s = data.find(b"\x89PNG\r\n\x1a\n", i)
         if s < 0:
             break
         e = data.find(b"IEND", s)
-        if e > 0:
+        if e > 0 and e + 8 <= n:
             out.append(data[s:e + 8])
-        i = s + 8
-    s = data.find(b"\xff\xd8\xff")  # JPEG
-    if s >= 0:
-        ends, j = [], s + 2
-        while True:
-            e = data.find(b"\xff\xd9", j)
+            i = e + 8
+        else:
+            i = s + 8
+
+    jstarts, i = [], 0                                # JPEG: FFD8FF ... EOI (FFD9)
+    while True:
+        s = data.find(b"\xff\xd8\xff", i)
+        if s < 0:
+            break
+        jstarts.append(s)
+        i = s + 3
+    for k, s in enumerate(jstarts):
+        limit = jstarts[k + 1] if k + 1 < len(jstarts) else n
+        eois, j = [], s + 2
+        while True:                                   # a JPEG may hold thumbnail EOIs
+            e = data.find(b"\xff\xd9", j, limit)
             if e < 0:
                 break
-            ends.append(e)
+            eois.append(e)
             j = e + 2
-        for e in reversed(ends[-8:]):
+        for e in reversed(eois[-6:]):                 # last EOIs = likeliest true end
             out.append(data[s:e + 2])
-    s = data.find(b"%PDF-")  # PDF
-    if s >= 0:
-        e = data.rfind(b"%%EOF")
+
+    i = 0                                             # WEBP: RIFF <u32 size> WEBP (exact)
+    while True:
+        s = data.find(b"RIFF", i)
+        if s < 0:
+            break
+        if data[s + 8:s + 12] == b"WEBP":
+            size = int.from_bytes(data[s + 4:s + 8], "little")
+            if 0 < size and s + 8 + size <= n:
+                out.append(data[s:s + 8 + size])
+        i = s + 4
+
+    gstarts, i = [], 0                                # GIF: GIF8[79]a ... 0x3B trailer
+    while True:
+        s = data.find(b"GIF8", i)
+        if s < 0:
+            break
+        if data[s:s + 6] in (b"GIF87a", b"GIF89a"):
+            gstarts.append(s)
+        i = s + 4
+    for k, s in enumerate(gstarts):
+        limit = gstarts[k + 1] if k + 1 < len(gstarts) else n
+        e = data.rfind(b"\x3b", s, limit)
+        if e > s:
+            out.append(data[s:e + 1])
+
+    pstarts, i = [], 0                                # PDF: %PDF- ... %%EOF
+    while True:
+        s = data.find(b"%PDF-", i)
+        if s < 0:
+            break
+        pstarts.append(s)
+        i = s + 5
+    for k, s in enumerate(pstarts):
+        limit = pstarts[k + 1] if k + 1 < len(pstarts) else n
+        e = data.rfind(b"%%EOF", s, limit)
         if e > s:
             out.append(data[s:e + 5])
             out.append(data[s:e + 6])
-    if data[:6] in (b"GIF87a", b"GIF89a"):  # GIF
-        e = data.rfind(b"\x3b")
-        if e > 0:
-            out.append(data[:e + 1])
+
     return out
 
 
@@ -776,6 +824,16 @@ def selftest():
     cg = sha3_hex(png) in carved and sha3_hex(jpg) in carved
     print(f"  carve PNG+JPEG: {'PASS' if cg else 'FAIL'}")
     ok &= cg
+    # multi-object carve — mimics small images packed contiguously in a blockfile data_# file
+    png2 = b"\x89PNG\r\n\x1a\n" + b"A" * 123 + b"IEND\xae\x42\x60\x82"
+    jpg2 = b"\xff\xd8\xff\xe1" + b"B" * 77 + b"\xff\xd9"
+    wp = b"WEBPVP8 \x01\x02\x03\x04"
+    webp = b"RIFF" + len(wp).to_bytes(4, "little") + wp
+    packed = b"\x00\x00" + png + jpg + b"\x11" + png2 + jpg2 + b"\x22" + webp + b"\x99"
+    cs = {sha3_hex(b) for b in carve_bodies(packed)}
+    multi = all(sha3_hex(x) in cs for x in (png, jpg, png2, jpg2, webp))
+    print(f"  carve multi-object (blockfile packing + webp): {'PASS' if multi else 'FAIL'}")
+    ok &= multi
     cid = cidv0(b"hello").startswith("Qm")
     print(f"  CIDv0 encode: {'PASS' if cid else 'FAIL'}")
     ok &= cid
