@@ -434,26 +434,25 @@ def collect_hits(args, target, progress=None):
 
 
 def write_bundle(found, args, name_source):
-    """Write files + manifest + zip. Returns (zip_path, named_count, out_dir)."""
+    """Write files + manifest + zip. Each file is named by its file-service
+    STORAGE KEY — the full externalID (content hash), no extension, no truncation —
+    so restoring is literally `cp files/* /storage/`: the surviving DB rows
+    reference blobs by that key and serve them again automatically.
+    Returns (zip_path, named_count, out_dir)."""
     name_by_hash = resolve_names(name_source, {h["hash"] for h in found}) if name_source else {}
     out_dir = Path(args.out).expanduser()
     files_dir = out_dir / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
-    used, rows, named = Counter(), [], 0
+    rows, named, seen = [], 0, set()
     for h in found:
+        name = h["hash"]                 # == externalID == on-disk storage filename
+        if name in seen:                 # found is already deduped by hash; belt-and-suspenders
+            continue
+        seen.add(name)
         rec = name_by_hash.get(h["hash"])
+        disp, mime = (rec[0], rec[1]) if rec else ("", "")
         if rec:
-            disp, mime, _dbsize = rec
             named += 1
-            stem = Path(disp).stem or h["hash"][:16]
-            name = f"{stem}.{Path(disp).suffix.lstrip('.') or ext_from_mime(mime, h['ext'])}"
-        else:
-            disp = mime = ""
-            name = f"{h['hash'][:32]}.{h['ext']}"
-        used[name] += 1
-        if used[name] > 1:
-            p = Path(name)
-            name = f"{p.stem}__{used[name]}{p.suffix}"
         (files_dir / name).write_bytes(h["body"])
         rows.append({"saved_as": name, "content_hash": h["hash"], "size": h["size"],
                      "ext": h["ext"], "crc_verified": h["crc_verified"], "browser": h["browser"],
@@ -464,8 +463,12 @@ def write_bundle(found, args, name_source):
         w.writerows(rows)
     (out_dir / "README.txt").write_text(
         "These files were recovered from this computer's browser cache because their "
-        "content exactly matched Alkemio's list of lost files.\nPlease send the .zip "
-        "next to this folder back to the Alkemio recovery team.\n")
+        "content exactly matched Alkemio's list of lost files.\n\n"
+        "Each file is named by its content hash = its file-service storage key, with "
+        "NO extension. To restore, copy them straight into the storage volume "
+        "(e.g. `cp files/* /storage/`): the database still references them by that "
+        "key, so they are served again automatically — no re-upload needed.\n\n"
+        "Please send the .zip next to this folder back to the Alkemio recovery team.\n")
     zip_path = Path(str(out_dir) + ".zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in out_dir.rglob("*"):
@@ -510,7 +513,8 @@ def scan_cli(args):
         except EOFError:
             pass
     zip_path, named, _ = write_bundle(found, args, name_source)
-    print(f"\nDone. Saved {len(found)} file(s) ({named} named). Send this to Alkemio:\n  {zip_path}")
+    print(f"\nDone. Saved {len(found)} file(s), each named by its storage key. "
+          f"Send this to Alkemio:\n  {zip_path}")
     return 0
 
 

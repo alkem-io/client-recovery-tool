@@ -147,15 +147,30 @@ alkemio-recover --db /path/file.csv   # verify every blob + name it by displayNa
 alkemio-recover --selftest            # engine self-check
 ```
 
-`--db` output: `files/` (named), `manifest.csv` (saved_as, content_hash, size,
-crc_verified, browser, db_filename, source_cache_file), `README.txt`, `.zip`.
+Output (both modes): `files/` — **each file named by its full file-service
+storage key** (the `externalID` = full SHA3-256, **no extension**, no truncation) —
+plus `manifest.csv` (`saved_as`, `content_hash`, `size`, `crc_verified`, `browser`,
+`db_filename`, `mime`, `source_cache_file`), `README.txt`, and the `.zip`. `--db`
+only *adds* the `db_filename` column; it does **not** change the storage-key
+filenames.
 
-## Reconciling returned bundles
+## Restoring (this is the whole point)
 
-Each client returns a `.zip` of hash-named blobs. A recovered blob's
-`content_hash` matches `file.externalID`, and one blob may satisfy **many** file
-rows (heavy dedup: 1.04M rows → ~19.6k unique blobs). Join
-`content_hash → file.externalID` to restore every reference at once.
+Because file-service is content-addressed and the DB rows survived, a recovered
+blob just needs to sit at its storage key — no re-upload, no DB writes:
+
+```bash
+cp files/* /storage/          # (or into the storage PVC / bucket prefix)
+```
+
+The `file` rows already reference these blobs by `externalID`, so they are served
+again automatically. One blob may satisfy **many** rows (heavy dedup: 1.04M rows →
+~19.6k unique blobs), so restoring one key can fix thousands of references at once.
+
+> Note: the filename IS the SHA3-256 of the bytes, so you can re-verify any blob
+> before copying: `openssl dgst -sha3-256 <file>` must equal its filename. (Legacy
+> pre-migration blobs are named by an IPFS CID instead — those verify as CIDv0, not
+> SHA3.)
 
 ## Files
 
