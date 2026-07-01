@@ -182,15 +182,29 @@ so they can't appear here.
 ## Restoring (this is the whole point)
 
 Because file-service is content-addressed and the DB rows survived, a recovered
-blob just needs to sit at its storage key — no re-upload, no DB writes:
+blob just needs to sit at its storage key — no re-upload, no DB writes. The `file`
+rows already reference blobs by `externalID`, so they are served again
+automatically, and one blob may satisfy **many** rows (heavy dedup: 1.04M rows →
+~19.6k unique blobs), so one key can fix thousands of references.
+
+**Collecting many bundles? Run `reconcile.py` first.** You will get bundles from
+different people (and possibly different tool versions — older builds named files
+`hash[:32].ext`, newer ones use the full key). Don't trust the bundle filenames:
+`reconcile.py` re-hashes every file's *content*, names it by its true storage key
+(SHA3-256, or CIDv0 for legacy blobs), dedups across all bundles, and — with a key
+list — verifies each and quarantines anything that matches no known key:
 
 ```bash
-cp files/* /storage/          # (or into the storage PVC / bucket prefix)
+python3 reconcile.py alkemio-recovered*.zip alkemio-recovered*/ --out . --db /path/file.csv
+# -> restore/  : unique, verified, storage-key-named blobs (ready to copy)
+# -> review/   : blobs matching no known key — inspect, do NOT restore blindly
+cp restore/* /storage/          # (or into the storage PVC / bucket prefix)
 ```
 
-The `file` rows already reference these blobs by `externalID`, so they are served
-again automatically. One blob may satisfy **many** rows (heavy dedup: 1.04M rows →
-~19.6k unique blobs), so restoring one key can fix thousands of references at once.
+`--db` accepts the prod `file` table CSV, a since-date CSV, or a plain hash list —
+anything the externalIDs appear in. Omit it to just normalize + dedup by SHA3 (fine
+for non-legacy blobs). A single latest-version bundle is already storage-key-named,
+so `cp files/* /storage/` works directly without reconcile.
 
 > Note: the filename IS the SHA3-256 of the bytes, so you can re-verify any blob
 > before copying: `openssl dgst -sha3-256 <file>` must equal its filename. (Legacy
@@ -202,6 +216,7 @@ again automatically. One blob may satisfy **many** rows (heavy dedup: 1.04M rows
 | File | Purpose |
 |---|---|
 | `alkemio_cache_recover.py` | the app: GUI + CLI engine (stdlib only; `--selftest`) |
+| `reconcile.py` | normalize collected bundles → `restore/` named by storage key (re-hash, dedup, verify) |
 | `gen_hashes.py` | build `target_hashes.txt` from a DB CSV (hashes only) |
 | `target_hashes.txt` | embedded lost-file hash list (generated) |
 | `packaging/build.sh` / `build.ps1` | per-OS standalone GUI builds |
