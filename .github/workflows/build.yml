@@ -31,8 +31,8 @@ jobs:
           - { os: windows-latest, sep: ";", env: acc,  hashfile: target_hashes_acc.txt, artifact: alkemio-recover-acc-windows }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Verify Tkinter (needed to bundle the GUI; 8.6+ required)
@@ -69,7 +69,7 @@ jobs:
             Linux)   cp dist/alkemio-recover     "out/alkemio-recover-${{ matrix.env }}-linux" ;;
           esac
           ls -la out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: out/*
@@ -84,7 +84,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Collect release assets
